@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <base target="_top">
+
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
+
+  <title>ChemoCare Track Dashboard</title>
+
+  <style>
+    :root {
+      --navy: #163d70;
+      --blue: #1565c0;
+      --background: #f4f7fb;
+      --border: #dfe5ec;
+      --text: #182230;
+      --muted: #687386;
+
+      --green-background: #e8f7ec;
+      --green-text: #19743a;
+
+      --yellow-background: #fff5d6;
+      --yellow-text: #9a6500;
+
+      --red-background: #fde7e8;
+      --red-text: #bc2634;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family:
+        Arial,
+        "Noto Sans Thai",
+        sans-serif;
+      background: var(--background);
+      color: var(--text);
+    }
+
+    .topbar {
+      min-height: 66px;
+      background: var(--navy);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 24px;
+    }
+
+    .topbar h1 {
+      margin: 0;
+      font-size: 21px;
+    }
+
+    .topbar-subtitle {
+      margin-top: 4px;
+      font-size: 12px;
+      opacity: 0.8;
+    }
+
+    .topbar button {
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      background: rgba(255, 255, 255, 0.12);
+      color: white;
+    }
+
+    main {
+      max-width: 1500px;
+      margin: auto;
+      padding: 24px;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns:
+        repeat(5, minmax(140px, 1fr));
+      gap: 14px;
+      margin-bottom: 22px;
+    }
+
+    .summary-card {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px;
+      box-shadow: 0 2px 8px rgba(28, 40, 55, 0.05);
+    }
+
+    .summary-card.green {
+      background: var(--green-background);
+      border-color: #b8dfc4;
+    }
+
+    .summary-card.yellow {
+      background: var(--yellow-background);
+      border-color: #ead38a;
+    }
+
+    .summary-card.red {
+      background: var(--red-background);
+      border-color: #edb5ba;
+    }
+
+    .card-label {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+
+    .card-value {
+      font-size: 31px;
+      font-weight: 700;
+    }
+
+    .green .card-value {
+      color: var(--green-text);
+    }
+
+    .yellow .card-value {
+      color: var(--yellow-text);
+    }
+
+    .red .card-value {
+      color: var(--red-text);
+    }
+
+    .panel {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(28, 40, 55, 0.05);
+    }
+
+    .panel-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .panel-header h2 {
+      margin: 0 0 12px;
+      font-size: 18px;
+    }
+
+    .filters {
+      display: grid;
+      grid-template-columns:
+        minmax(220px, 1fr)
+        180px
+        180px;
+      gap: 10px;
+    }
+
+    input,
+    select,
+    button {
+      min-height: 40px;
+      padding: 8px 12px;
+      border: 1px solid #cfd7e1;
+      border-radius: 6px;
+      font-size: 14px;
+      background: white;
+    }
+
+    button {
+      cursor: pointer;
+      background: var(--blue);
+      color: white;
+      border-color: var(--blue);
+    }
+
+    button:hover {
+      opacity: 0.9;
+    }
+
+    .table-wrapper {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 1050px;
+    }
+
+    th,
+    td {
+      padding: 12px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+      font-size: 13px;
+    }
+
+    th {
+      background: #f7f9fc;
+      color: #536174;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    tbody tr:hover {
+      background: #f9fbfd;
+    }
+
+    .risk-badge {
+      display: inline-block;
+      min-width: 80px;
+      padding: 5px 9px;
+      border-radius: 999px;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .risk-green {
+      background: var(--green-background);
+      color: var(--green-text);
+    }
+
+    .risk-yellow {
+      background: var(--yellow-background);
+      color: var(--yellow-text);
+    }
+
+    .risk-red {
+      background: var(--red-background);
+      color: var(--red-text);
+    }
+
+    .detail-button {
+      min-height: 32px;
+      padding: 5px 9px;
+      font-size: 12px;
+    }
+
+    .status-message {
+      padding: 35px;
+      text-align: center;
+      color: var(--muted);
+    }
+
+    .error {
+      display: none;
+      padding: 14px;
+      margin-bottom: 15px;
+      border: 1px solid #edb5ba;
+      border-radius: 8px;
+      color: var(--red-text);
+      background: var(--red-background);
+      white-space: pre-wrap;
+    }
+
+    dialog {
+      width: min(850px, 94vw);
+      max-height: 88vh;
+      border: none;
+      border-radius: 10px;
+      padding: 0;
+      box-shadow: 0 16px 50px rgba(0, 0, 0, 0.3);
+    }
+
+    dialog::backdrop {
+      background: rgba(10, 22, 40, 0.55);
+    }
+
+    .modal-header {
+      padding: 18px 20px;
+      background: var(--navy);
+      color: white;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-header h3 {
+      margin: 0;
+    }
+
+    .close-button {
+      min-height: auto;
+      border: none;
+      background: transparent;
+      color: white;
+      font-size: 22px;
+      padding: 0;
+    }
+
+    .modal-body {
+      padding: 20px;
+      overflow-y: auto;
+      max-height: 72vh;
+    }
+
+    .patient-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .info-box {
+      padding: 12px;
+      background: #f6f8fb;
+      border-radius: 7px;
+    }
+
+    .info-label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+
+    .symptom-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .symptom-row {
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+
+    .symptom-name {
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    @media (max-width: 900px) {
+      .summary-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .filters {
+        grid-template-columns: 1fr;
+      }
+
+      .patient-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 520px) {
+      main {
+        padding: 12px;
+      }
+
+      .summary-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .topbar {
+        padding: 12px 14px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header class="topbar">
+    <div>
+      <h1>ChemoCare Track</h1>
+
+      <div class="topbar-subtitle">
+        Dashboard สำหรับติดตามอาการหลังได้รับยาเคมีบำบัด
+      </div>
+    </div>
+
+    <button onclick="loadDashboard()">
+      รีเฟรชข้อมูล
+    </button>
+  </header>
+
+  <main>
+    <div id="errorBox" class="error"></div>
+
+    <section class="summary-grid">
+      <article class="summary-card green">
+        <div class="card-label">ปกติ สีเขียว</div>
+        <div id="greenCount" class="card-value">0</div>
+      </article>
+
+      <article class="summary-card yellow">
+        <div class="card-label">เฝ้าระวัง สีเหลือง</div>
+        <div id="yellowCount" class="card-value">0</div>
+      </article>
+
+      <article class="summary-card red">
+        <div class="card-label">อันตราย สีแดง</div>
+        <div id="redCount" class="card-value">0</div>
+      </article>
+
+      <article class="summary-card">
+        <div class="card-label">ข้อมูลไม่สมบูรณ์</div>
+        <div id="invalidCount" class="card-value">0</div>
+      </article>
+
+      <article class="summary-card">
+        <div class="card-label">รายการทั้งหมด</div>
+        <div id="totalCount" class="card-value">0</div>
+      </article>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>รายการแบบประเมิน</h2>
+
+        <div class="filters">
+          <input
+            id="searchInput"
+            type="search"
+            placeholder="ค้นหาชื่อ วันที่ หรือเบอร์โทร"
+            oninput="applyFilters()"
+          >
+
+          <select
+            id="riskFilter"
+            onchange="applyFilters()"
+          >
+            <option value="">ทุกระดับความเสี่ยง</option>
+            <option value="RED">อันตราย สีแดง</option>
+            <option value="YELLOW">เฝ้าระวัง สีเหลือง</option>
+            <option value="GREEN">ปกติ สีเขียว</option>
+          </select>
+
+          <select
+            id="validationFilter"
+            onchange="applyFilters()"
+          >
+            <option value="">ข้อมูลทุกสถานะ</option>
+            <option value="VALID">ข้อมูลสมบูรณ์</option>
+            <option value="INVALID">ข้อมูลไม่สมบูรณ์</option>
+          </select>
+        </div>
+
+        <div
+          id="generatedAt"
+          class="muted"
+          style="margin-top: 10px; font-size: 12px;"
+        ></div>
+      </div>
+
+      <div class="table-wrapper">
+        <div id="loadingMessage" class="status-message">
+          กำลังโหลดข้อมูล...
+        </div>
+
+        <table id="assessmentTable" hidden>
+          <thead>
+            <tr>
+              <th>เวลารายงาน</th>
+              <th>ชื่อผู้ป่วย</th>
+              <th>วันที่รับยา</th>
+              <th>เบอร์โทร</th>
+              <th>ระดับความเสี่ยง</th>
+              <th>สาเหตุ</th>
+              <th>ข้อมูล</th>
+            </tr>
+          </thead>
+
+          <tbody id="assessmentBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="detailDialog">
+    <div class="modal-header">
+      <h3>รายละเอียดแบบประเมิน</h3>
+
+      <button
+        class="close-button"
+        onclick="closeDetails()"
+        aria-label="Close"
+      >
+        ×
+      </button>
+    </div>
+
+    <div id="modalBody" class="modal-body"></div>
+  </dialog>
+
+  <script>
+    let allRows = [];
+
+    const symptomLabels = {
+      fever: 'ไข้',
+      fatigue: 'อ่อนเพลีย',
+      nausea: 'คลื่นไส้',
+      vomiting: 'อาเจียน',
+      diarrhea: 'ถ่ายเหลว',
+      constipation: 'ท้องผูก',
+      appetite: 'เบื่ออาหาร',
+      mouthSore: 'เจ็บปากหรือแผลในปาก',
+      swallowing: 'กลืนเจ็บหรือกลืนลำบาก',
+      rash: 'ผื่นหรือคัน',
+      breathing: 'หายใจเหนื่อย',
+      cough: 'ไอ',
+      pain: 'ปวดตามร่างกายหรือปวดข้อ',
+      numbness: 'ชาปลายมือปลายเท้า',
+      swelling: 'มือหรือเท้าบวม'
+    };
+
+    document.addEventListener(
+      'DOMContentLoaded',
+      loadDashboard
+    );
+
+    function loadDashboard() {
+      showLoading();
+      hideError();
+
+      google.script.run
+        .withSuccessHandler(handleDashboardData)
+        .withFailureHandler(handleDashboardError)
+        .getDashboardData();
+    }
+
+    function handleDashboardData(data) {
+      allRows = Array.isArray(data.rows)
+        ? data.rows
+        : [];
+
+      document.getElementById('greenCount').textContent =
+        data.summary.green || 0;
+
+      document.getElementById('yellowCount').textContent =
+        data.summary.yellow || 0;
+
+      document.getElementById('redCount').textContent =
+        data.summary.red || 0;
+
+      document.getElementById('invalidCount').textContent =
+        data.summary.invalid || 0;
+
+      document.getElementById('totalCount').textContent =
+        data.summary.total || 0;
+
+      document.getElementById('generatedAt').textContent =
+        data.generatedAt
+          ? 'อัปเดตล่าสุด: ' + data.generatedAt
+          : '';
+
+      applyFilters();
+    }
+
+    function applyFilters() {
+      const searchText = document
+        .getElementById('searchInput')
+        .value
+        .trim()
+        .toLowerCase();
+
+      const riskFilter = document
+        .getElementById('riskFilter')
+        .value;
+
+      const validationFilter = document
+        .getElementById('validationFilter')
+        .value;
+
+      const filteredRows = allRows.filter(function(row) {
+        const searchableText = [
+          row.timestamp,
+          row.name,
+          row.treatmentDate,
+          row.phone,
+          row.reasonText
+        ]
+          .join(' ')
+          .toLowerCase();
+
+        const matchesSearch =
+          !searchText ||
+          searchableText.includes(searchText);
+
+        const matchesRisk =
+          !riskFilter ||
+          row.risk === riskFilter;
+
+        const matchesValidation =
+          !validationFilter ||
+          row.validationStatus === validationFilter;
+
+        return (
+          matchesSearch &&
+          matchesRisk &&
+          matchesValidation
+        );
+      });
+
+      renderTable(filteredRows);
+    }
+
+    function renderTable(rows) {
+      const table = document.getElementById(
+        'assessmentTable'
+      );
+
+      const body = document.getElementById(
+        'assessmentBody'
+      );
+
+      const loading = document.getElementById(
+        'loadingMessage'
+      );
+
+      body.innerHTML = '';
+
+      if (rows.length === 0) {
+        table.hidden = true;
+        loading.hidden = false;
+        loading.textContent = 'ไม่พบข้อมูล';
+        return;
+      }
+
+      rows.forEach(function(row) {
+        const tr = document.createElement('tr');
+
+        tr.innerHTML = `
+          <td>${escapeHtml(row.timestamp)}</td>
+
+          <td>
+            <strong>${escapeHtml(row.name)}</strong>
+          </td>
+
+          <td>${escapeHtml(row.treatmentDate)}</td>
+
+          <td>${escapeHtml(row.phone)}</td>
+
+          <td>
+            <span class="risk-badge ${getRiskClass(row.risk)}">
+              ${escapeHtml(row.riskLabel)}
+            </span>
+          </td>
+
+          <td>
+            ${escapeHtml(row.reasonText)}
+          </td>
+
+          <td>
+            <button
+              class="detail-button"
+              onclick="showDetails(${row.rowNumber})"
+            >
+              ดูรายละเอียด
+            </button>
+          </td>
+        `;
+
+        body.appendChild(tr);
+      });
+
+      loading.hidden = true;
+      table.hidden = false;
+    }
+
+    function showDetails(rowNumber) {
+      const row = allRows.find(function(item) {
+        return item.rowNumber === rowNumber;
+      });
+
+      if (!row) {
+        return;
+      }
+
+      const symptomsHtml = Object.keys(symptomLabels)
+        .map(function(key) {
+          const value =
+            row.symptoms[key] || 'ไม่มีข้อมูล';
+
+          return `
+            <div class="symptom-row">
+              <div class="symptom-name">
+                ${escapeHtml(symptomLabels[key])}
+              </div>
+
+              <div>
+                ${escapeHtml(value)}
+              </div>
+            </div>
+          `;
+        })
+        .join('');
+
+      const reasonsHtml = row.reasons
+        .map(function(reason) {
+          return '<li>' + escapeHtml(reason) + '</li>';
+        })
+        .join('');
+
+      const validationHtml =
+        row.validationErrors.length > 0
+          ? `
+            <h4>ปัญหาคุณภาพข้อมูล</h4>
+            <ul>
+              ${row.validationErrors
+                .map(function(error) {
+                  return '<li>' + escapeHtml(error) + '</li>';
+                })
+                .join('')}
+            </ul>
+          `
+          : '';
+
+      document.getElementById('modalBody').innerHTML = `
+        <div class="patient-grid">
+          <div class="info-box">
+            <div class="info-label">ชื่อผู้ป่วย</div>
+            <strong>${escapeHtml(row.name)}</strong>
+          </div>
+
+          <div class="info-box">
+            <div class="info-label">วันที่รายงาน</div>
+            <strong>${escapeHtml(row.timestamp)}</strong>
+          </div>
+
+          <div class="info-box">
+            <div class="info-label">วันที่ได้รับยา</div>
+            <strong>${escapeHtml(row.treatmentDate)}</strong>
+          </div>
+
+          <div class="info-box">
+            <div class="info-label">ระดับความเสี่ยง</div>
+
+            <span class="risk-badge ${getRiskClass(row.risk)}">
+              ${escapeHtml(row.riskLabel)}
+            </span>
+          </div>
+        </div>
+
+        <h4>เหตุผลที่จัดระดับความเสี่ยง</h4>
+        <ul>${reasonsHtml}</ul>
+
+        ${validationHtml}
+
+        <h4>รายละเอียดอาการ</h4>
+
+        <div class="symptom-list">
+          ${symptomsHtml}
+        </div>
+      `;
+
+      document.getElementById(
+        'detailDialog'
+      ).showModal();
+    }
+
+    function closeDetails() {
+      document.getElementById(
+        'detailDialog'
+      ).close();
+    }
+
+    function getRiskClass(risk) {
+      const riskClasses = {
+        GREEN: 'risk-green',
+        YELLOW: 'risk-yellow',
+        RED: 'risk-red'
+      };
+
+      return riskClasses[risk] || '';
+    }
+
+    function showLoading() {
+      document.getElementById(
+        'assessmentTable'
+      ).hidden = true;
+
+      const loading = document.getElementById(
+        'loadingMessage'
+      );
+
+      loading.hidden = false;
+      loading.textContent = 'กำลังโหลดข้อมูล...';
+    }
+
+    function handleDashboardError(error) {
+      document.getElementById(
+        'loadingMessage'
+      ).textContent = 'ไม่สามารถโหลดข้อมูลได้';
+
+      showError(
+        error && error.message
+          ? error.message
+          : String(error)
+      );
+    }
+
+    function showError(message) {
+      const errorBox = document.getElementById(
+        'errorBox'
+      );
+
+      errorBox.textContent = message;
+      errorBox.style.display = 'block';
+    }
+
+    function hideError() {
+      document.getElementById(
+        'errorBox'
+      ).style.display = 'none';
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+  </script>
+</body>
+</html>

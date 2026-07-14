@@ -1,0 +1,824 @@
+/**
+ * ChemoCare Track Dashboard
+ *
+ * Reads responses from the Google Form response sheet,
+ * validates the data and calculates GREEN / YELLOW / RED risk.
+ */
+
+const CONFIG = {
+  // Use the exact tab name displayed at the bottom of Google Sheets.
+  SHEET_NAME: 'การตอบแบบฟอร์ม 1',
+
+  HEADERS: {
+    TIMESTAMP: 'ประทับเวลา',
+    NAME: 'ชื่อ-สกุล',
+    TREATMENT_DATE: 'วันที่ได้รับยาเคมีบำบัด',
+    PHONE: 'เบอร์โทรติดต่อกลับฉุกเฉิน',
+
+    FEVER: 'คุณมีไข้หรือไม่',
+    FATIGUE: 'คุณมีอาการอ่อนเพลียหรือไม่',
+    NAUSEA: 'คุณมีอาการคลื่นไส้หรือไม่',
+    VOMITING: 'คุณมีอาการอาเจียนหรือไม่',
+    DIARRHEA: 'คุณมีอาการถ่ายเหลวหรือไม่',
+    CONSTIPATION: 'คุณมีอาการท้องผูกหรือไม่',
+    APPETITE: 'คุณมีอาการเบื่ออาหารหรือไม่',
+    MOUTH_SORE: 'คุณมีอาการเจ็บปากหรือไม่',
+    SWALLOWING: 'คุณมีอาการกลืนเจ็บหรือกลืนลำบากหรือไม่',
+    RASH: 'คุณมีผื่นหรือคันตามตัวบ้างหรือไม่',
+    BREATHING: 'คุณมีอาการหายใจเหนื่อยหรือไม่',
+    COUGH: 'คุณมีอาการไอหรือไม่',
+    PAIN: 'คุณมีอาการปวดตามร่างกาย/ปวดข้อหรือไม่',
+    NUMBNESS: 'คุณมีอาการชาปลายมือปลายเท้าหรือไม่',
+    SWELLING: 'คุณมีอาการมือเท้าบวมหรือไม่'
+  }
+};
+
+
+/**
+ * Web application entry point.
+ */
+function doGet() {
+  return HtmlService
+    .createHtmlOutputFromFile('Index')
+    .setTitle('ChemoCare Track Dashboard')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+
+/**
+ * Returns dashboard data to Index.html.
+ */
+function getDashboardData() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = spreadsheet.getSheetByName(CONFIG.SHEET_NAME);
+
+  if (!sheet) {
+    throw new Error(
+      'ไม่พบชีตชื่อ "' + CONFIG.SHEET_NAME +
+      '" กรุณาตรวจสอบชื่อแท็บใน Google Sheets'
+    );
+  }
+
+  const range = sheet.getDataRange();
+  const displayValues = range.getDisplayValues();
+
+  if (displayValues.length < 2) {
+    return createEmptyDashboard_();
+  }
+
+  const headers = displayValues[0].map(function(header) {
+    return String(header).trim();
+  });
+
+  const headerMap = createHeaderMap_(headers);
+
+  validateRequiredHeaders_(headerMap);
+
+  const rows = [];
+
+  for (let index = 1; index < displayValues.length; index++) {
+    const sheetRow = displayValues[index];
+
+    // Ignore completely blank rows.
+    if (sheetRow.every(function(value) {
+      return String(value).trim() === '';
+    })) {
+      continue;
+    }
+
+    const assessment = createAssessment_(
+      sheetRow,
+      headerMap,
+      index + 1
+    );
+
+    rows.push(assessment);
+  }
+
+  rows.sort(sortAssessments_);
+
+  const summary = calculateSummary_(rows);
+
+  return {
+    generatedAt: Utilities.formatDate(
+      new Date(),
+      Session.getScriptTimeZone(),
+      'dd/MM/yyyy HH:mm:ss'
+    ),
+    summary: summary,
+    rows: rows
+  };
+}
+
+
+/**
+ * Converts sheet headers into:
+ *
+ * {
+ *   "ชื่อ-สกุล": 1,
+ *   "คุณมีไข้หรือไม่": 4
+ * }
+ */
+function createHeaderMap_(headers) {
+  const map = {};
+
+  headers.forEach(function(header, index) {
+    if (header) {
+      map[header] = index;
+    }
+  });
+
+  return map;
+}
+
+
+/**
+ * Confirms that the required columns exist.
+ */
+function validateRequiredHeaders_(headerMap) {
+  const requiredHeaders = [
+    CONFIG.HEADERS.TIMESTAMP,
+    CONFIG.HEADERS.NAME,
+    CONFIG.HEADERS.TREATMENT_DATE,
+    CONFIG.HEADERS.PHONE,
+    CONFIG.HEADERS.FEVER,
+    CONFIG.HEADERS.FATIGUE,
+    CONFIG.HEADERS.NAUSEA,
+    CONFIG.HEADERS.VOMITING,
+    CONFIG.HEADERS.DIARRHEA,
+    CONFIG.HEADERS.BREATHING
+  ];
+
+  const missingHeaders = requiredHeaders.filter(function(header) {
+    return headerMap[header] === undefined;
+  });
+
+  if (missingHeaders.length > 0) {
+    throw new Error(
+      'ไม่พบคอลัมน์ต่อไปนี้: ' + missingHeaders.join(', ')
+    );
+  }
+}
+
+
+/**
+ * Builds one dashboard record from one sheet row.
+ */
+function createAssessment_(row, headerMap, rowNumber) {
+  const data = {};
+
+  Object.keys(CONFIG.HEADERS).forEach(function(key) {
+    const headerName = CONFIG.HEADERS[key];
+    data[key] = getCell_(row, headerMap, headerName);
+  });
+
+  const validation = validateAssessment_(data);
+  const risk = calculateRisk_(data);
+
+  return {
+    rowNumber: rowNumber,
+
+    timestamp: data.TIMESTAMP,
+    name: data.NAME,
+    treatmentDate: data.TREATMENT_DATE,
+
+    // Mask telephone number for the summary dashboard.
+    phone: maskPhone_(data.PHONE),
+
+    risk: risk.level,
+    riskLabel: getThaiRiskLabel_(risk.level),
+    reasons: risk.reasons,
+    reasonText: risk.reasons.join(' • '),
+
+    validationStatus: validation.isValid ? 'VALID' : 'INVALID',
+    validationErrors: validation.errors,
+
+    symptoms: {
+      fever: data.FEVER,
+      fatigue: data.FATIGUE,
+      nausea: data.NAUSEA,
+      vomiting: data.VOMITING,
+      diarrhea: data.DIARRHEA,
+      constipation: data.CONSTIPATION,
+      appetite: data.APPETITE,
+      mouthSore: data.MOUTH_SORE,
+      swallowing: data.SWALLOWING,
+      rash: data.RASH,
+      breathing: data.BREATHING,
+      cough: data.COUGH,
+      pain: data.PAIN,
+      numbness: data.NUMBNESS,
+      swelling: data.SWELLING
+    }
+  };
+}
+
+
+/**
+ * Basic data-quality validation.
+ */
+function validateAssessment_(data) {
+  const errors = [];
+
+  if (!cleanText_(data.NAME)) {
+    errors.push('ไม่มีชื่อผู้ป่วย');
+  }
+
+  if (!cleanText_(data.TIMESTAMP)) {
+    errors.push('ไม่มีเวลาส่งแบบประเมิน');
+  }
+
+  if (!cleanText_(data.TREATMENT_DATE)) {
+    errors.push('ไม่มีวันที่ได้รับยาเคมีบำบัด');
+  }
+
+  if (!cleanText_(data.PHONE)) {
+    errors.push('ไม่มีเบอร์โทรติดต่อกลับ');
+  }
+
+  if (!cleanText_(data.FEVER)) {
+    errors.push('ไม่มีข้อมูลอาการไข้');
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors: errors
+  };
+}
+
+
+/**
+ * Risk classification.
+ *
+ * IMPORTANT:
+ * These are starter rules only.
+ * The clinical team must approve the final rules.
+ */
+function calculateRisk_(data) {
+  const redReasons = [];
+  const yellowReasons = [];
+
+  evaluateFever_(data.FEVER, redReasons, yellowReasons);
+  evaluateBreathing_(data.BREATHING, redReasons, yellowReasons);
+  evaluateVomiting_(data.VOMITING, redReasons, yellowReasons);
+  evaluateDiarrhea_(data.DIARRHEA, redReasons, yellowReasons);
+  evaluateSwallowing_(data.SWALLOWING, redReasons, yellowReasons);
+  evaluateFatigue_(data.FATIGUE, redReasons, yellowReasons);
+  evaluateNausea_(data.NAUSEA, redReasons, yellowReasons);
+  evaluateAppetite_(data.APPETITE, redReasons, yellowReasons);
+  evaluateMouthSore_(data.MOUTH_SORE, redReasons, yellowReasons);
+  evaluateRash_(data.RASH, redReasons, yellowReasons);
+  evaluatePain_(data.PAIN, redReasons, yellowReasons);
+  evaluateSwelling_(data.SWELLING, redReasons, yellowReasons);
+  evaluateCough_(data.COUGH, redReasons, yellowReasons);
+
+  if (redReasons.length > 0) {
+    return {
+      level: 'RED',
+      reasons: redReasons.concat(yellowReasons)
+    };
+  }
+
+  if (yellowReasons.length > 0) {
+    return {
+      level: 'YELLOW',
+      reasons: yellowReasons
+    };
+  }
+
+  return {
+    level: 'GREEN',
+    reasons: ['ไม่พบเงื่อนไขความเสี่ยงจากกฎที่กำหนด']
+  };
+}
+
+
+/* ------------------------------------------------------------------
+ * Individual symptom rules
+ * ------------------------------------------------------------------ */
+
+function evaluateFever_(value, redReasons, yellowReasons) {
+  const text = normalizeThaiText_(value);
+
+  if (!text) {
+    return;
+  }
+
+  if (
+    containsAny_(text, [
+      '38',
+      'มากกว่า 38',
+      'สูงกว่า 38',
+      'มีไข้สูง',
+      'หนาวสั่น'
+    ]) &&
+    !containsAny_(text, [
+      'น้อยกว่า 38',
+      'ต่ำกว่า 38'
+    ])
+  ) {
+    redReasons.push('มีไข้ตั้งแต่ 38°C หรือมีอาการหนาวสั่น');
+    return;
+  }
+
+  if (
+    containsAny_(text, [
+      'มีไข้',
+      'ตัวร้อน'
+    ]) &&
+    !containsAny_(text, [
+      'ไม่มีไข้'
+    ])
+  ) {
+    yellowReasons.push('รายงานว่ามีไข้หรือตัวร้อน');
+  }
+}
+
+
+function evaluateBreathing_(value, redReasons, yellowReasons) {
+  const text = normalizeThaiText_(value);
+
+  if (
+    containsAny_(text, [
+      'หายใจไม่ออก',
+      'หอบมาก',
+      'เหนื่อยมาก',
+      'แน่นหน้าอก',
+      'หายใจลำบากมาก'
+    ])
+  ) {
+    redReasons.push('มีอาการหายใจลำบากหรือแน่นหน้าอก');
+    return;
+  }
+
+  if (
+    containsAny_(text, [
+      'หายใจเหนื่อย',
+      'หายใจลำบาก',
+      'เหนื่อยง่าย'
+    ]) &&
+    !containsAny_(text, [
+      'ไม่มีอาการหายใจเหนื่อย',
+      'ไม่มีหายใจเหนื่อย'
+    ])
+  ) {
+    yellowReasons.push('มีอาการหายใจเหนื่อย');
+  }
+}
+
+
+function evaluateVomiting_(value, redReasons, yellowReasons) {
+  const text = normalizeThaiText_(value);
+
+  if (!text || containsAny_(text, ['ไม่มีอาเจียน'])) {
+    return;
+  }
+
+  if (
+    containsAny_(text, [
+      'มากกว่า 6',
+      '> 6',
+      'มากกว่า 5',
+      'ตลอดเวลา',
+      'กินไม่ได้',
+      'ดื่มน้ำไม่ได้'
+    ])
+  ) {
+    redReasons.push('อาเจียนรุนแรงหรือไม่สามารถรับประทานน้ำได้');
+    return;
+  }
+
+  if (
+    containsAny_(text, [
+      '4-6',
+      '4 - 6',
+      '3-5',
+      '3 - 5',
+      'หลายครั้ง',
+      'อาเจียน'
+    ])
+  ) {
+    yellowReasons.push('มีอาการอาเจียน');
+  }
+}
+
+
+function evaluateDiarrhea_(value, redReasons, yellowReasons) {
+  const text = normalizeThaiText_(value);
+
+  if (
+    !text ||
+    containsAny_(text, [
+      'ไม่มีถ่ายเหลว',
+      'ไม่มีอาการถ่ายเหลว'
+    ])
+  ) {
+    return;
+  }
+
+  if (
+    containsAny_(text, [
+      'มากกว่า 6',
+      '> 6',
+      'มากกว่า 5',
+      'ถ่ายตลอด',
+      'มีเลือด'
+    ])
+  ) {
+    redReasons.push('มีอาการถ่ายเหลวรุนแรงหรือมีเลือดปน');
+    return;
+  }
+
+  yellowReasons.push('มีอาการถ่ายเหลว');
+}
+
+
+function evaluateSwallowing_(value, redReasons, yellowReasons) {
+  const text = normalizeThaiText_(value);
+
+  if (
+    !text ||
+    containsAny_(text, [
+      'ไม่มีอาการกลืนเจ็บ',
+      'ไม่มีอาการกลืนลำบาก',
+      'ไม่มีอาการกลืนเจ็บหรือกลืนลำบาก'
+    ])
+  ) {
+    return;
+  }
+
+  if (
+    containsAny_(text, [
+      'กลืนไม่ได้',
+      'ดื่มน้ำไม่ได้',
+      'รับประทานไม่ได้',
+      'รุนแรง'
+    ])
+  ) {
+    redReasons.push('กลืนไม่ได้หรือไม่สามารถดื่มน้ำได้');
+    return;
+  }
+
+  yellowReasons.push('มีอาการกลืนเจ็บหรือกลืนลำบาก');
+}
+
+
+function evaluateFatigue_(value, redReasons, yellowReasons) {
+  const text = normalizeThaiText_(value);
+
+  if (!text) {
+    return;
+  }
+
+  if (
+    containsAny_(text, [
+      'ทำกิจวัตรไม่ได้',
+      'ลุกไม่ได้',
+      'นอนตลอด',
+      'รุนแรงมาก'
+    ])
+  ) {
+    redReasons.push('อ่อนเพลียรุนแรงจนทำกิจวัตรไม่ได้');
+    return;
+  }
+
+  if (
+    containsAny_(text, [
+      'อ่อนเพลียปานกลาง',
+      'อ่อนเพลียมาก',
+      'ทำกิจวัตรได้น้อยลง'
+    ])
+  ) {
+    yellowReasons.push('มีอาการอ่อนเพลียระดับปานกลางขึ้นไป');
+  }
+}
+
+
+function evaluateNausea_(value, redReasons, yellowReasons) {
+  const text = normalizeThaiText_(value);
+
+  if (
+    !text ||
+    containsAny_(text, ['ไม่มีคลื่นไส้'])
+  ) {
+    return;
+  }
+
+  if (
+    containsAny_(text, [
+      'รุนแรง',
+      'รับประทานไม่ได้',
+      'ดื่มน้ำไม่ได้'
+    ])
+  ) {
+    redReasons.push('คลื่นไส้รุนแรงจนรับประทานหรือดื่มไม่ได้');
+    return;
+  }
+
+  yellowReasons.push('มีอาการคลื่นไส้');
+}
+
+
+function evaluateAppetite_(value, redReasons, yellowReasons) {
+  const text = normalizeThaiText_(value);
+
+  if (
+    !text ||
+    containsAny_(text, [
+      'ไม่มีอาการเบื่ออาหาร',
+      'ทานได้เป็นปกติ'
+    ])
+  ) {
+    return;
+  }
+
+  if (
+    containsAny_(text, [
+      'รับประทานไม่ได้',
+      'ไม่สามารถทาน',
+      'ดื่มไม่ได้'
+    ])
+  ) {
+    redReasons.push('ไม่สามารถรับประทานอาหารหรือดื่มน้ำได้');
+    return;
+  }
+
+  yellowReasons.push('มีอาการเบื่ออาหารหรือรับประทานได้น้อยลง');
+}
+
+
+function evaluateMouthSore_(value, redReasons, yellowReasons) {
+  const text = normalizeThaiText_(value);
+
+  if (
+    !text ||
+    text === 'ไม่มี' ||
+    containsAny_(text, [
+      'ไม่มีแผล',
+      'ไม่มีอาการเจ็บปาก'
+    ])
+  ) {
+    return;
+  }
+
+  if (
+    containsAny_(text, [
+      'กินไม่ได้',
+      'ดื่มไม่ได้',
+      'แผลรุนแรง'
+    ])
+  ) {
+    redReasons.push('แผลในปากรุนแรงจนรับประทานไม่ได้');
+    return;
+  }
+
+  yellowReasons.push('มีอาการเจ็บปากหรือแผลในปาก');
+}
+
+
+function evaluateRash_(value, redReasons, yellowReasons) {
+  const text = normalizeThaiText_(value);
+
+  if (
+    !text ||
+    containsAny_(text, [
+      'ไม่มีผื่น',
+      'ไม่มีผื่น/คัน'
+    ])
+  ) {
+    return;
+  }
+
+  if (
+    containsAny_(text, [
+      'หน้าบวม',
+      'ปากบวม',
+      'ลิ้นบวม',
+      'หายใจไม่ออก',
+      'ทั่วตัว'
+    ])
+  ) {
+    redReasons.push('มีผื่นร่วมกับอาการบวมหรือหายใจผิดปกติ');
+    return;
+  }
+
+  yellowReasons.push('มีผื่นหรืออาการคัน');
+}
+
+
+function evaluatePain_(value, redReasons, yellowReasons) {
+  const text = normalizeThaiText_(value);
+
+  if (
+    !text ||
+    containsAny_(text, [
+      'ไม่มีอาการปวด',
+      'ไม่มีอาการปวดตามร่างกาย'
+    ])
+  ) {
+    return;
+  }
+
+  if (
+    containsAny_(text, [
+      'ปวดรุนแรง',
+      'ปวดมาก',
+      'ทนไม่ไหว'
+    ])
+  ) {
+    redReasons.push('มีอาการปวดรุนแรง');
+    return;
+  }
+
+  yellowReasons.push('มีอาการปวดตามร่างกายหรือปวดข้อ');
+}
+
+
+function evaluateSwelling_(value, redReasons, yellowReasons) {
+  const text = normalizeThaiText_(value);
+
+  if (
+    !text ||
+    containsAny_(text, [
+      'ไม่มีอาการมือเท้าบวม',
+      'ไม่มีมือเท้าบวม'
+    ])
+  ) {
+    return;
+  }
+
+  if (
+    containsAny_(text, [
+      'บวมมาก',
+      'บวมรุนแรง',
+      'บวมทั้งตัว'
+    ])
+  ) {
+    redReasons.push('มีอาการบวมรุนแรง');
+    return;
+  }
+
+  yellowReasons.push('มีอาการมือหรือเท้าบวม');
+}
+
+
+function evaluateCough_(value, redReasons, yellowReasons) {
+  const text = normalizeThaiText_(value);
+
+  if (
+    !text ||
+    containsAny_(text, ['ไม่มีอาการไอ'])
+  ) {
+    return;
+  }
+
+  if (
+    containsAny_(text, [
+      'ไอเป็นเลือด',
+      'หายใจไม่ออก',
+      'แน่นหน้าอก'
+    ])
+  ) {
+    redReasons.push('มีอาการไอร่วมกับสัญญาณอันตราย');
+    return;
+  }
+
+  yellowReasons.push('มีอาการไอ');
+}
+
+
+/* ------------------------------------------------------------------
+ * Summary and sorting
+ * ------------------------------------------------------------------ */
+
+function calculateSummary_(rows) {
+  return rows.reduce(function(summary, row) {
+    summary.total += 1;
+
+    if (row.risk === 'GREEN') {
+      summary.green += 1;
+    } else if (row.risk === 'YELLOW') {
+      summary.yellow += 1;
+    } else if (row.risk === 'RED') {
+      summary.red += 1;
+    }
+
+    if (row.validationStatus === 'INVALID') {
+      summary.invalid += 1;
+    }
+
+    return summary;
+  }, {
+    green: 0,
+    yellow: 0,
+    red: 0,
+    invalid: 0,
+    total: 0
+  });
+}
+
+
+function sortAssessments_(a, b) {
+  const priority = {
+    RED: 1,
+    YELLOW: 2,
+    GREEN: 3
+  };
+
+  const riskDifference =
+    priority[a.risk] - priority[b.risk];
+
+  if (riskDifference !== 0) {
+    return riskDifference;
+  }
+
+  // Newest rows first when risk is the same.
+  return b.rowNumber - a.rowNumber;
+}
+
+
+function createEmptyDashboard_() {
+  return {
+    generatedAt: '',
+    summary: {
+      green: 0,
+      yellow: 0,
+      red: 0,
+      invalid: 0,
+      total: 0
+    },
+    rows: []
+  };
+}
+
+
+/* ------------------------------------------------------------------
+ * Utility functions
+ * ------------------------------------------------------------------ */
+
+function getCell_(row, headerMap, headerName) {
+  const columnIndex = headerMap[headerName];
+
+  if (columnIndex === undefined) {
+    return '';
+  }
+
+  return cleanText_(row[columnIndex]);
+}
+
+
+function cleanText_(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+
+  return String(value).trim();
+}
+
+
+function normalizeThaiText_(value) {
+  return cleanText_(value)
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/°/g, '')
+    .replace(/celsius/g, 'c');
+}
+
+
+function containsAny_(text, keywords) {
+  return keywords.some(function(keyword) {
+    return text.indexOf(keyword.toLowerCase()) !== -1;
+  });
+}
+
+
+function maskPhone_(phone) {
+  const cleaned = cleanText_(phone).replace(/\D/g, '');
+
+  if (cleaned.length < 4) {
+    return cleaned;
+  }
+
+  return '******' + cleaned.slice(-4);
+}
+
+
+function getThaiRiskLabel_(level) {
+  const labels = {
+    GREEN: 'ปกติ',
+    YELLOW: 'เฝ้าระวัง',
+    RED: 'อันตราย'
+  };
+
+  return labels[level] || level;
+}
+
+
+/**
+ * Run this function manually to confirm that the script
+ * can read the response sheet.
+ */
+function testDashboardData() {
+  const result = getDashboardData();
+  console.log(JSON.stringify(result, null, 2));
+}
