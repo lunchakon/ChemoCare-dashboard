@@ -1,5 +1,6 @@
 # ChemoCare Track — Project Summary
-![Uploading image.png…]()
+<img width="1138" height="469" alt="image" src="https://github.com/user-attachments/assets/540fa421-467f-4280-9bfc-48b3e3d98ed5" />
+
 
 ## 1. Project Overview
 
